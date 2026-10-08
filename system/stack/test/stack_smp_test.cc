@@ -16,6 +16,7 @@
  *
  ******************************************************************************/
 #include <bluetooth/types/address.h>
+#include <bluetooth/types/bt_octets.h>
 #include <bluetooth/types/hci_role.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -30,13 +31,13 @@
 #include "stack/btm/btm_sec.h"
 #include "stack/btm/internal/btm_api.h"
 #include "stack/include/acl_api.h"
-#include "stack/include/bt_octets.h"
 #include "stack/include/btm_ble_api.h"
 #include "stack/include/smp_status.h"
+#include "stack/mock/mock_stack_acl.h"
+#include "stack/mock/mock_stack_btm_dev.h"
+#include "stack/mock/mock_stack_btm_sec.h"
 #include "stack/smp/p_256_ecc_pp.h"
 #include "stack/smp/smp_int.h"
-#include "test/mock/mock_stack_acl.h"
-#include "test/mock/mock_stack_btm_dev.h"
 
 using testing::StrEq;
 
@@ -67,7 +68,6 @@ static const std::string* get_pts_broadcast_audio_config_options(void) {
   return &kBroadcastAudioConfigOptions;
 }
 static bool get_pts_le_audio_disable_ases_before_stopping(void) { return false; }
-static config_t* get_all(void) { return nullptr; }
 const packet_fragmenter_t* packet_fragmenter_get_interface() { return nullptr; }
 
 stack_config_t mock_stack_config{
@@ -94,7 +94,6 @@ stack_config_t mock_stack_config{
         .get_pts_broadcast_audio_config_options = get_pts_broadcast_audio_config_options,
         .get_pts_le_audio_disable_ases_before_stopping =
                 get_pts_le_audio_disable_ases_before_stopping,
-        .get_all = get_all,
 };
 const stack_config_t* stack_config_get_interface(void) { return &mock_stack_config; }
 
@@ -128,7 +127,7 @@ const stack_config_t* stack_config_get_interface(void) { return &mock_stack_conf
  */
 
 static void dump_uint128_reverse(const Octet16& a, char* buffer) {
-  for (int i = (int)(OCTET16_LEN - 1); i >= 0; --i) {
+  for (int i = (int)(kOctet16Length - 1); i >= 0; --i) {
     snprintf(buffer, 3, "%02x", a[i]);
     buffer += 2;
   }
@@ -145,14 +144,14 @@ protected:
   void SetUp() override {
     p_cb_.tk = {0};
     // Set pairing request packet to 0x070710000001(01)
-    p_cb_.local_io_capability = 0x01;
+    p_cb_.local_io_capability = BtIoCap::DISPLAY_YES_NO;  // 0x01
     p_cb_.loc_oob_flag = 0x00;
     p_cb_.loc_auth_req = 0x00;
     p_cb_.loc_enc_size = 0x10;
     p_cb_.local_i_key = 0x07;
     p_cb_.local_r_key = 0x07;
     // Set pairing response packet to 0x050008000003(02)
-    p_cb_.peer_io_caps = 0x03;
+    p_cb_.peer_io_caps = BtIoCap::NO_INPUT_NO_OUTPUT;  // 0x03;
     p_cb_.peer_oob_flag = 0x00;
     p_cb_.peer_auth_req = 0x00;
     p_cb_.peer_enc_size = 0x08;
@@ -173,7 +172,7 @@ TEST_F(SmpCalculateConfirmTest, test_smp_gen_p2_4_confirm_as_central) {
   test::mock::stack_acl::BTM_ReadConnectionAddr.body =
           [](const RawAddress& /*remote_bda*/, RawAddress& local_conn_addr,
              tBLE_ADDR_TYPE* p_addr_type, bool /*ota_address*/) {
-            local_conn_addr = RawAddress({0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6});
+            local_conn_addr = RawAddress("A1:A2:A3:A4:A5:A6");
             *p_addr_type = BLE_ADDR_RANDOM;
           };
 
@@ -181,7 +180,7 @@ TEST_F(SmpCalculateConfirmTest, test_smp_gen_p2_4_confirm_as_central) {
   test::mock::stack_acl::BTM_ReadRemoteConnectionAddr.body =
           [](const RawAddress& /*pseudo_addr*/, RawAddress& conn_addr, tBLE_ADDR_TYPE* p_addr_type,
              bool /*ota_address*/) {
-            conn_addr = RawAddress({0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6});
+            conn_addr = RawAddress("B1:B2:B3:B4:B5:B6");
             *p_addr_type = BLE_ADDR_PUBLIC;
             return true;
           };
@@ -193,7 +192,7 @@ TEST_F(SmpCalculateConfirmTest, test_smp_gen_p2_4_confirm_as_central) {
   Octet16 p2 = smp_gen_p2_4_confirm(&p_cb_, remote_bda);
   // Correct p2 is 0x00000000a1a2a3a4a5a6b1b2b3b4b5b6
   const char expected_p2_str[] = "00000000a1a2a3a4a5a6b1b2b3b4b5b6";
-  char p2_str[2 * OCTET16_LEN + 1];
+  char p2_str[2 * kOctet16Length + 1];
   dump_uint128_reverse(p2, p2_str);
   ASSERT_THAT(p2_str, StrEq(expected_p2_str));
 
@@ -207,7 +206,7 @@ TEST_F(SmpCalculateConfirmTest, test_aes_128_as_central) {
   test::mock::stack_acl::BTM_ReadConnectionAddr.body =
           [](const RawAddress& /*remote_bda*/, RawAddress& local_conn_addr,
              tBLE_ADDR_TYPE* p_addr_type, bool /*ota_address*/) {
-            local_conn_addr = RawAddress({0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6});
+            local_conn_addr = RawAddress("A1:A2:A3:A4:A5:A6");
             *p_addr_type = BLE_ADDR_RANDOM;
           };
 
@@ -215,7 +214,7 @@ TEST_F(SmpCalculateConfirmTest, test_aes_128_as_central) {
   test::mock::stack_acl::BTM_ReadRemoteConnectionAddr.body =
           [](const RawAddress& /*pseudo_addr*/, RawAddress& conn_addr, tBLE_ADDR_TYPE* p_addr_type,
              bool /*ota_address*/) {
-            conn_addr = RawAddress({0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6});
+            conn_addr = RawAddress("B1:B2:B3:B4:B5:B6");
             *p_addr_type = BLE_ADDR_PUBLIC;
             return true;
           };
@@ -227,18 +226,18 @@ TEST_F(SmpCalculateConfirmTest, test_aes_128_as_central) {
   Octet16 p1 = smp_gen_p1_4_confirm(&p_cb_, remote_bd_addr_type);
   // Correct p1 is 0x05000800000302070710000001010001
   const char expected_p1_str[] = "05000800000302070710000001010001";
-  char p1_str[2 * OCTET16_LEN + 1];
+  char p1_str[2 * kOctet16Length + 1];
   dump_uint128_reverse(p1, p1_str);
   ASSERT_THAT(p1_str, StrEq(expected_p1_str));
   smp_xor_128(&p1, rand_);
   // Correct p1 xor r is 0x5283dd2156ae6d096498274ec7712ee1
   const char expected_p1_xor_r_str[] = "5283dd2156ae6d096498274ec7712ee1";
-  char p1_xor_r_str[2 * OCTET16_LEN + 1];
+  char p1_xor_r_str[2 * kOctet16Length + 1];
   dump_uint128_reverse(p1, p1_xor_r_str);
   ASSERT_THAT(p1_xor_r_str, StrEq(expected_p1_xor_r_str));
   Octet16 output = crypto_toolbox::aes_128(p_cb_.tk, p1);
   const char expected_p1_prime_str[] = "02c7aa2a9857ac866ff91232df0e3c95";
-  char p1_prime_str[2 * OCTET16_LEN + 1];
+  char p1_prime_str[2 * kOctet16Length + 1];
   dump_uint128_reverse(output, p1_prime_str);
   ASSERT_THAT(p1_prime_str, StrEq(expected_p1_prime_str));
 
@@ -252,7 +251,7 @@ TEST_F(SmpCalculateConfirmTest, test_smp_calculate_confirm_as_central) {
   test::mock::stack_acl::BTM_ReadConnectionAddr.body =
           [](const RawAddress& /*remote_bda*/, RawAddress& local_conn_addr,
              tBLE_ADDR_TYPE* p_addr_type, bool /*ota_address*/) {
-            local_conn_addr = RawAddress({0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6});
+            local_conn_addr = RawAddress("A1:A2:A3:A4:A5:A6");
             *p_addr_type = BLE_ADDR_RANDOM;
           };
 
@@ -260,7 +259,7 @@ TEST_F(SmpCalculateConfirmTest, test_smp_calculate_confirm_as_central) {
   test::mock::stack_acl::BTM_ReadRemoteConnectionAddr.body =
           [](const RawAddress& /*pseudo_addr*/, RawAddress& conn_addr, tBLE_ADDR_TYPE* p_addr_type,
              bool /*ota_address*/) {
-            conn_addr = RawAddress({0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6});
+            conn_addr = RawAddress("B1:B2:B3:B4:B5:B6");
             *p_addr_type = BLE_ADDR_PUBLIC;
             return true;
           };
@@ -270,7 +269,7 @@ TEST_F(SmpCalculateConfirmTest, test_smp_calculate_confirm_as_central) {
   EXPECT_EQ(status, SMP_SUCCESS);
   // Correct MConfirm is 0x1e1e3fef878988ead2a74dc5bef13b86
   const char expected_confirm_str[] = "1e1e3fef878988ead2a74dc5bef13b86";
-  char confirm_str[2 * OCTET16_LEN + 1];
+  char confirm_str[2 * kOctet16Length + 1];
   dump_uint128_reverse(output, confirm_str);
   ASSERT_THAT(confirm_str, StrEq(expected_confirm_str));
 
@@ -406,17 +405,20 @@ class SmpBrProcessPairingCommandTest : public testing::Test {
 
  protected:
   tSMP_CB cb_;
-  tBTM_SEC_DEV_REC* p_dev_rec_;
-  const RawAddress pairing_bda_ = RawAddress({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+  BtmDevice* p_dev_rec_;
+  const RawAddress pairing_bda_ = RawAddress("11:22:33:44:55:66");
 
   void SetUp() override {
-    test::mock::stack_btm_dev::btm_find_dev.body =
-        [this](const RawAddress& bd_addr) {
-          if (bd_addr == pairing_bda_) {
-            return p_dev_rec_;
-          }
-          return static_cast<tBTM_SEC_DEV_REC*>(nullptr);
-        };
+    test::mock::stack_btm_sec::btm_sec_get_min_enc_key_size.body = [](void) {
+      return MIN_KEY_SIZE_DEFAULT;
+    };
+
+    test::mock::stack_btm_dev::btm_get_dev.body = [this](const RawAddress& bd_addr) {
+      if (bd_addr == pairing_bda_) {
+        return p_dev_rec_;
+      }
+      return static_cast<BtmDevice*>(nullptr);
+    };
 
     cb_ = {};
     cb_.smp_rsp_timer_ent = alarm_new("smp_rsp_timer");
@@ -424,12 +426,13 @@ class SmpBrProcessPairingCommandTest : public testing::Test {
     cb_.rcvd_cmd_len = SmpBrProcessPairingCommandTest::SMP_PAIRING_REQ_SIZE;
     cb_.pairing_bda = pairing_bda_;
     cb_.role = HCI_ROLE_CENTRAL;
-    p_dev_rec_ = new tBTM_SEC_DEV_REC();
+    p_dev_rec_ = new BtmDevice();
     p_dev_rec_->bd_addr = pairing_bda_;
   }
 
   void TearDown() override {
-    test::mock::stack_btm_dev::btm_find_dev.body = {};
+    test::mock::stack_btm_sec::btm_sec_get_min_enc_key_size.body = {};
+    test::mock::stack_btm_dev::btm_get_dev.body = {};
     if (cb_.smp_rsp_timer_ent) {
       alarm_free(cb_.smp_rsp_timer_ent);
       cb_.smp_rsp_timer_ent = nullptr;
@@ -445,7 +448,7 @@ class SmpBrProcessPairingCommandTest : public testing::Test {
   void CallProcessPairingCommand() {
     tSMP_INT_DATA data;
     uint8_t pkt[6] = {0};
-    pkt[0] = cb_.peer_io_caps;
+    pkt[0] = static_cast<uint8_t>(cb_.peer_io_caps);
     pkt[1] = cb_.peer_oob_flag;
     pkt[2] = cb_.peer_auth_req;
     pkt[3] = cb_.peer_enc_size;
@@ -471,7 +474,7 @@ TEST_F(SmpBrProcessPairingCommandTest, test_invalid_command_length) {
 }
 
 TEST_F(SmpBrProcessPairingCommandTest, test_device_not_found) {
-  cb_.pairing_bda = RawAddress({0, 0, 0, 0, 0, 0});
+  cb_.pairing_bda = RawAddress::kEmpty;
 
   CallProcessPairingCommand();
 
@@ -561,7 +564,7 @@ TEST_F(SmpBrProcessPairingCommandTest, test_invalid_parameters) {
   p_dev_rec_->sec_rec.sec_flags |= BTM_SEC_LINK_KEY_AUTHED;
 
   cb_.peer_enc_size = 16;
-  cb_.peer_io_caps = 0xFF;
+  cb_.peer_io_caps = BtIoCap::IO_CAP_UNKNOWN;
 
   CallProcessPairingCommand();
   EXPECT_EQ(cb_.status, SMP_INVALID_PARAMETERS);
@@ -575,7 +578,7 @@ TEST_F(SmpBrProcessPairingCommandTest, test_success_as_peripheral) {
   p_dev_rec_->sec_rec.sec_flags |= BTM_SEC_LINK_KEY_AUTHED;
 
   cb_.peer_enc_size = 16;
-  cb_.peer_io_caps = BTM_IO_CAP_NONE;  // Valid
+  cb_.peer_io_caps = BtIoCap::NO_INPUT_NO_OUTPUT;  // Valid
   cb_.role = HCI_ROLE_PERIPHERAL;
 
   CallProcessPairingCommand();
@@ -596,7 +599,7 @@ TEST_F(SmpBrProcessPairingCommandTest, test_success_as_central) {
   p_dev_rec_->sec_rec.sec_flags |= BTM_SEC_LINK_KEY_AUTHED;
 
   cb_.peer_enc_size = 16;
-  cb_.peer_io_caps = BTM_IO_CAP_NONE;  // Valid
+  cb_.peer_io_caps = BtIoCap::NO_INPUT_NO_OUTPUT;  // Valid
   cb_.peer_i_key = 0x01;
   cb_.peer_r_key = 0x02;
   cb_.role = HCI_ROLE_CENTRAL;

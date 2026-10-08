@@ -685,12 +685,10 @@ void l2c_lcc_proc_pdu(tL2C_CCB* p_ccb, BT_HDR* p_buf) {
   BT_HDR* p_data = NULL;
 
   uint16_t local_mps = p_ccb->local_conn_cfg.mps;
-  if (com_android_bluetooth_flags_fix_buf_len_check_for_first_k_frame()) {
-    if (p_ccb->is_first_seg) {
-      // for the first k-frame, donot consider sdu_length
-      // as part of the information payload
-      local_mps = p_ccb->local_conn_cfg.mps + sizeof(sdu_length);
-    }
+  if (p_ccb->is_first_seg) {
+    // for the first k-frame, donot consider sdu_length
+    // as part of the information payload
+    local_mps = p_ccb->local_conn_cfg.mps + sizeof(sdu_length);
   }
 
   /* Buffer length should not exceed local mps */
@@ -899,8 +897,14 @@ static bool process_reqseq(tL2C_CCB* p_ccb, uint16_t ctrl_word) {
     }
 
     /* If we are still in a wait_ack state, do not mess with the timer */
-    if (!p_ccb->fcrb.wait_ack) {
-      l2c_fcr_stop_timer(p_ccb);
+    if (!com::android::bluetooth::flags::donot_release_wakelock_if_tx_queue_is_not_empty()) {
+      if (!p_ccb->fcrb.wait_ack) {
+        l2c_fcr_stop_timer(p_ccb);
+      }
+    } else {
+      if (!p_ccb->fcrb.wait_ack && fixed_queue_is_empty(p_fcrb->waiting_for_ack_q)) {
+        l2c_fcr_stop_timer(p_ccb);
+      }
     }
 
     /* Check if we need to call the "packet_sent" callback */
@@ -1837,8 +1841,7 @@ uint8_t l2c_fcr_process_peer_cfg_req(tL2C_CCB* p_ccb, tL2CAP_CFG_INFO* p_cfg) {
         p_ccb->peer_cfg.fcs = p_cfg->fcs;
       }
 
-      if (com_android_bluetooth_flags_l2cap_improve_segmented_sdu() &&
-          p_cfg->fcr.mode == L2CAP_FCR_ERTM_MODE) {
+      if (p_cfg->fcr.mode == L2CAP_FCR_ERTM_MODE) {
         max_retrans_size = BT_ERTM_BUFFER_SIZE - sizeof(BT_HDR) - L2CAP_MIN_OFFSET -
                            L2CAP_SDU_LEN_OFFSET - fcs_len;
       } else {

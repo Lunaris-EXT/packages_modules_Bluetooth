@@ -40,6 +40,7 @@
 #include "stack/include/btm_sec_api_types.h"
 #include "stack/include/hci_error_code.h"
 #include "stack/include/l2cap_interface.h"
+#include "stack/include/l2cap_av_interface.h"
 #include "stack/l2cap/internal/l2c_api.h"
 
 #define L2CAP_MIN_MTU 48 /* Minimum acceptable MTU is 48 bytes */
@@ -188,6 +189,9 @@ typedef enum : uint16_t {
 #define LE_DYNAMIC_PSM_START 0x0080
 #define LE_DYNAMIC_PSM_END 0x00FF
 #define LE_DYNAMIC_PSM_RANGE (LE_DYNAMIC_PSM_END - LE_DYNAMIC_PSM_START + 1)
+#define LECOC_FIXED_PSM_SLOTS_DEFAULT 0x00
+#define LECOC_FIXED_PSM_RANGE_MIN 0x00
+#define LECOC_FIXED_PSM_RANGE_MAX 0x08
 
 /* Return values for l2cu_process_peer_cfg_req() */
 #define L2CAP_PEER_CFG_UNACCEPTABLE 0
@@ -405,6 +409,8 @@ enum tCONN_UPDATE_MASK : uint8_t {
   L2C_BLE_AGGRESSIVE_INITIAL_PARAM = (1u << 4),
   /* Connection parameters are used for LE Audio subrate*/
   L2C_BLE_AUDIO_PARAM_SUBRATE = (1u << 5),
+  /* reset connection parameter for subrating*/
+  L2C_BLE_UPDATE_FOR_SUBRATE_RESET_PENDING = (1u << 6)
 };
 
 /* Define a link control block. There is one link control block between
@@ -439,7 +445,11 @@ public:
 
 private:
   tHCI_ROLE link_role_{HCI_ROLE_CENTRAL}; /* Central or peripheral */
+  uint16_t subrate_factor_;
+  uint16_t cont_num_;
   uint16_t conn_interval_;
+  uint16_t periph_latency_;
+  uint16_t supervision_tout_;
 
 public:
   tHCI_ROLE LinkRole() const { return link_role_; }
@@ -447,8 +457,16 @@ public:
   bool IsLinkRolePeripheral() const { return link_role_ == HCI_ROLE_PERIPHERAL; }
   void SetLinkRoleAsCentral() { link_role_ = HCI_ROLE_CENTRAL; }
   void SetLinkRoleAsPeripheral() { link_role_ = HCI_ROLE_PERIPHERAL; }
+  uint16_t SubrateFactor() { return subrate_factor_; }
+  void SetSubrateFactor(uint16_t subrate_factor) { subrate_factor_ = subrate_factor; }
+  uint16_t ContNumber() const { return cont_num_; }
+  void SetContNumber(uint16_t cont_num) { cont_num_ = cont_num; }
   uint16_t ConnInterval() const { return conn_interval_; }
   void SetConnInterval(uint16_t conn_interval) { conn_interval_ = conn_interval; }
+  uint16_t PeriphLatency() const { return periph_latency_; }
+  void SetPeriphLatency(uint16_t periph_latency) { periph_latency_ = periph_latency; }
+  uint16_t SupervisionTimeout() const { return supervision_tout_; }
+  void SetSupervisionTimeout(uint16_t supervision_tout) { supervision_tout_ = supervision_tout; }
 
   uint8_t signal_id;     /* Signalling channel id */
   uint8_t cur_echo_id;   /* Current id value for echo request */
@@ -479,6 +497,7 @@ public:
     }
   }
 
+  int triggered_le_acl_conn{0};
   bool w4_info_rsp;         /* true when info request is active */
   uint32_t peer_ext_fea;    /* Peer's extended features mask */
   list_t* link_xmit_data_q; /* Link transmit data buffer queue */
@@ -508,6 +527,10 @@ public:
     }
     return false;
   }
+
+  bool rate_control_enabled = false;
+  bool is_rate_control_enabled() { return rate_control_enabled; }
+  void set_rate_control_enabled(bool enabled) { rate_control_enabled = enabled; }
 
   tL2C_CCB* p_fixed_ccbs[L2CAP_NUM_FIXED_CHNLS];
   std::vector<uint16_t> suspended;  // List of fixed channel CIDs which are suspended but not
@@ -545,6 +568,7 @@ public:
 #define L2C_BLE_SUBRATE_REQ_DISABLE 0x1  // disable subrate req
 #define L2C_BLE_NEW_SUBRATE_PARAM 0x2    // new subrate req parameter to be set
 #define L2C_BLE_SUBRATE_REQ_PENDING 0x4  // waiting for subrate to be completed
+#define L2C_BLE_RESET_SUBRATE_PARAM 0x8  // reset subrate parameter because of timeout
 
   /* subrate req params */
   uint16_t subrate_min;
@@ -615,7 +639,10 @@ struct tL2C_CB {
 
   bool disallow_switch;     /* false, to allow switch at create conn */
   uint16_t num_lm_acl_bufs; /* # of ACL buffers on controller */
+  uint16_t full_num_lm_acl_bufs; /* Total # of ACL buffers on controller */
   uint16_t idle_timeout;    /* Idle timeout */
+  uint16_t pending_acks_until_coex_cb;
+  tL2C_COEX_READY coex_cb;
 
   tL2C_LCB* p_cur_hcit_lcb; /* Current HCI Transport buffer */
   uint16_t num_used_lcbs;   /* Number of active link control blocks */
@@ -713,6 +740,7 @@ tL2C_LCB* l2cu_find_lcb_by_handle(uint16_t handle);
 bool l2cu_set_acl_priority(const RawAddress& bd_addr, tL2CAP_PRIORITY priority,
                            bool reset_after_rs);
 bool l2cu_set_acl_latency(const RawAddress& bd_addr, tL2CAP_LATENCY latency);
+bool l2cu_set_rate_control_enabled(const RawAddress& bd_addr, bool enabled);
 
 void l2cu_enqueue_ccb(tL2C_CCB* p_ccb);
 void l2cu_dequeue_ccb(tL2C_CCB* p_ccb);

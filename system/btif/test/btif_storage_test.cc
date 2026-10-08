@@ -52,18 +52,20 @@ TEST(BtifStorageTest, test_uuid_split_partial) {
   EXPECT_EQ(num_uuids, 1u);
 }
 
-RawAddress kRawAddress({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+TEST(BtifStorageTest, test_uuid_split_zero_limit) {
+  const char* s1 = "e39c6285-867f-4b1d-9db0-35fbd9aebf22 e39c6285-867f-4b1d-9db0-35fbd9aebf23";
 
-TEST(BtifStorageTest, test_btif_storage_reset_irk) {
-  if (com_android_bluetooth_flags_btsec_cycle_irks()) {
-    btif_storage_add_bonded_device(&kRawAddress, SAMPLE_LTK, 0, 0);
+  Uuid uuids[2];
+  // Intentionally set all to verify they aren't overwritten when limit is 0
+  const uint8_t fill[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                          0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+  uuids[0] = Uuid::From128BitBE(fill);
+  uuids[1] = Uuid::From128BitBE(fill);
 
-    ASSERT_EQ(0, get_func_call_count("BTA_DmBleResetId"));
-
-    btif_storage_remove_bonded_device(&kRawAddress);
-
-    ASSERT_EQ(1, get_func_call_count("BTA_DmBleResetId"));
-  }
+  size_t num_uuids = btif_split_uuids_string(s1, uuids, 0);
+  EXPECT_EQ(num_uuids, 0u);
+  EXPECT_EQ(0, memcmp(uuids[0].To128BitBE().data(), fill, sizeof(fill)));
+  EXPECT_EQ(0, memcmp(uuids[1].To128BitBE().data(), fill, sizeof(fill)));
 }
 
 TEST(BtifStorageTest, test_uuid_split_zero_limit) {
