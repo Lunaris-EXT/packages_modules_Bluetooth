@@ -5371,11 +5371,3 @@ uint8_t btm_sec_get_min_enc_key_size() {
           std::max(android::sysprop::bluetooth::Gap::min_key_size(), MIN_KEY_SIZE), MAX_KEY_SIZE);
   return min_key_size;
 }
-
-uint8_t btm_sec_get_min_enc_key_size() {
-  static uint8_t min_key_size = (uint8_t)std::min(
-          std::max(android::sysprop::bluetooth::Gap::min_key_size().value_or(MIN_KEY_SIZE_DEFAULT),
-                   MIN_KEY_SIZE),
-          MAX_KEY_SIZE);
-  return min_key_size;
-}
