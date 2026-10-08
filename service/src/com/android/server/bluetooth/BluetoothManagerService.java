@@ -59,6 +59,7 @@ import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.database.ContentObserver;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -97,6 +98,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
@@ -164,6 +166,11 @@ public class BluetoothManagerService {
     private final ContentResolver mContentResolver;
     private final Context mContext;
     private final Looper mLooper;
+
+    // Settings.Global.BLUETOOTH_OFF_TIMEOUT
+    private static final String BLUETOOTH_OFF_TIMEOUT = "bluetooth_off_timeout";
+
+    private final BluetoothExecutor mExecutor;
 
     private final String mHciInstanceName;
     private AutoOn mAutoOn;
@@ -577,6 +584,7 @@ public class BluetoothManagerService {
         mActiveLogs = new ActiveLogs();
 
         mHandler = new BluetoothHandler(mLooper);
+        mExecutor = new BluetoothExecutor(mHandler);
         mBleAppManager = new BleAppManager(this::post, this::bleOnToOffIfNeeded);
 
         // Observe BLE scan only mode settings change.
@@ -696,7 +704,7 @@ public class BluetoothManagerService {
         @Override
         public void onAlarm() {
             if (mAdapter == null) return;
-            if (!isEnabled()) return;
+            if (!mState.oneOf(State.ON)) return;
             if (mIsMediaProfileConnected) return;
             disable(TAG, true);
         }
@@ -2095,5 +2103,18 @@ public class BluetoothManagerService {
 
     private void sendMessageDelayed(Message msg, Duration delay) {
         mHandler.sendMessageAtTime(msg, mTimeProvider.uptimeMillis() + delay.toMillis());
+    }
+
+    public static class BluetoothExecutor implements Executor {
+        private final Handler handler;
+
+        public BluetoothExecutor(Handler handler) {
+            this.handler = handler;
+        }
+
+        @Override
+        public void execute(Runnable r) {
+            handler.post(r);
+        }
     }
 }
