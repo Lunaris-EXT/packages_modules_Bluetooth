@@ -38,7 +38,6 @@
 #include <string.h>
 
 #include <mutex>
-#include <vector>
 
 #include "bta/include/bta_sdp_api.h"
 #include "bta/sys/bta_sys.h"
@@ -58,10 +57,13 @@ using namespace bluetooth;
 
 // Protects the sdp_slots array from concurrent access.
 
+/**
+ * The need for a state variable have been reduced to two states.
+ * The remaining state control is handled by program flow
+ */
 typedef enum {
   SDP_RECORD_FREE = 0,
   SDP_RECORD_ALLOCED,
-  SDP_RECORD_CREATE_INITIATED,
 } sdp_state_t;
 
 typedef struct {
@@ -281,8 +283,6 @@ static const sdp_slot_t* start_create_sdp_in_main_thread(int id) {
     return NULL;
   }
 
-  sdp_slots[id].state = SDP_RECORD_CREATE_INITIATED;
-
   return &(sdp_slots[id]);
 }
 
@@ -340,7 +340,6 @@ static BtStatus remove_sdp_record_in_main_thread(int record_id) {
   }
 
   tBTA_SERVICE_ID service_id = 0;
-
   switch (sdp_type) {
     case SDP_TYPE_MAP_MAS:
       service_id = BTA_MAP_SERVICE_ID;
@@ -379,19 +378,6 @@ static BtStatus remove_sdp_record_in_main_thread(int record_id) {
 BtStatus remove_sdp_record(int record_id) {
   return get_main_thread()->DoInThreadSynchronously(&remove_sdp_record_in_main_thread,
                                                   record_id);
-}
-
-static void sdp_check_pending_records() {
-  std::vector<int> pending_ids;
-  {
-    std::unique_lock<std::recursive_mutex> lock(sdp_lock);
-    pending_ids = sdp_record_creation_pending_ids;
-    sdp_record_creation_pending_ids.clear();
-  }
-
-  for (int id : pending_ids) {
-    remove_sdp_record(id);
-  }
 }
 
 /******************************************************************************
@@ -465,19 +451,6 @@ static void handle_create_record_event_in_main_thread(int id) {
          *       btif_dm_enable_service}.
          */
         btif_enable_service(service_id);
-      }
-
-      bool has_pending = false;
-
-      {
-        std::unique_lock<std::recursive_mutex> lock(sdp_lock);
-        sdp_slots[id].state = SDP_RECORD_ALLOCED;
-        has_pending = !sdp_record_creation_pending_ids.empty();
-      }
-
-      /* Check if any records were pending removal */
-      if (has_pending) {
-        sdp_check_pending_records();
       }
     }
   }
